@@ -260,6 +260,19 @@
   }
   .wechat-manager button.primary { background: #07c160; color: #fff; }
   .wechat-manager button.danger { background: #ff3b30; color: #fff; }
+  .regex-section { background:#fff; border:0.5px solid #d6d6d6; border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; }
+  .regex-section h3 { font-size:15px; font-weight:600; }
+  .regex-script { border:0.5px solid #e5e5ea; border-radius:9px; padding:8px; display:flex; flex-direction:column; gap:7px; }
+  .regex-script.invalid { border-color:#ff3b30; background:#fff5f5; }
+  .regex-script .regex-head { display:grid; grid-template-columns:auto 1fr 86px 34px; gap:6px; align-items:center; }
+  .regex-script .regex-grid { display:grid; grid-template-columns:1fr 70px 92px; gap:6px; }
+  .regex-script .regex-warn { color:#ff3b30; font-size:12px; min-height:15px; }
+  .regex-script .regex-test-result { color:#3a3a3c; background:#f2f2f7; border-radius:8px; padding:8px; min-height:34px; white-space:pre-wrap; user-select:text; -webkit-user-select:text; }
+  .regex-script label { display:flex; align-items:center; gap:4px; font-size:13px; color:#3a3a3c; }
+  .regex-script label input { width:auto; }
+  .regex-script button.icon-small { padding:7px 9px; color:#ff3b30; }
+  .regex-script button.test { color:#007aff; }
+  .regex-help { font-size:12px; color:#8e8e93; line-height:1.35; }
   .badge {
     background: #fa5151; color: #fff;
     font-size: 11px; min-width: 18px; height: 18px;
@@ -1147,21 +1160,24 @@ const BUILTIN_PERSONAS = {
     personality: '操心、直接、嘴硬心软,表达关心时有点唠叨,但出发点温暖。',
     voice: '中文口语,常用“啊呀”开头,语气直接,像微信里家人聊天,不要长篇大论。',
     greeting: '吃饭了吗?',
-    examples: [{ user: '最近有点累', char: '啊呀,累了就早点睡,别总熬夜。饭也要按时吃。' }]
+    examples: [{ user: '最近有点累', char: '啊呀,累了就早点睡,别总熬夜。饭也要按时吃。' }],
+    regexScripts: []
   },
   bot: {
     description: '通用小助手,负责回答用户问题、整理信息和给出实用建议。',
     personality: '礼貌、可靠、耐心,不过度闲聊。',
     voice: '用简洁自然的中文回复,条理清楚,必要时用短列表。',
     greeting: '你好,我可以帮你处理问题。',
-    examples: [{ user: '帮我想个标题', char: '可以。把主题和风格告诉我,我给你几个备选。' }]
+    examples: [{ user: '帮我想个标题', char: '可以。把主题和风格告诉我,我给你几个备选。' }],
+    regexScripts: []
   },
   friend: {
     description: '阿坤,28 岁兄弟,吊儿郎当,爱打球、爱开玩笑,和用户关系很熟。',
     personality: '随性、讲义气、嘴贫,偶尔吐槽,但不会恶意攻击。',
     voice: '中文口语,说话糙一点、短一点,像兄弟微信聊天,可以用“兄弟”“整”“别怂”等表达。',
     greeting: '周末打球吗?',
-    examples: [{ user: '今天好烦', char: '咋了兄弟,谁又整你了?说说,晚上打球发泄下。' }]
+    examples: [{ user: '今天好烦', char: '咋了兄弟,谁又整你了?说说,晚上打球发泄下。' }],
+    regexScripts: []
   }
 };
 
@@ -1169,11 +1185,38 @@ function builtinPersona(id) {
   return JSON.parse(JSON.stringify(BUILTIN_PERSONAS[id] || BUILTIN_PERSONAS.bot));
 }
 
+function normalizeRegexScripts(scripts) {
+  return Array.isArray(scripts) ? scripts.map((script, index) => ({
+    id: String(script.id || ('rx_' + Date.now() + '_' + index)),
+    name: String(script.name || '未命名脚本'),
+    find: String(script.find || ''),
+    flags: String(script.flags || 'gi') || 'gi',
+    replace: String(script.replace || ''),
+    target: ['input','output','display'].includes(script.target) ? script.target : 'display',
+    enabled: script.enabled !== false
+  })) : [];
+}
+
+function applyRegexScripts(contact, text, target, onError) {
+  const scripts = normalizeRegexScripts(contact?.persona?.regexScripts).filter(s => s.enabled && s.target === target);
+  return scripts.reduce((current, script) => {
+    if (!script.find) return current;
+    try {
+      return String(current).replace(new RegExp(script.find, script.flags || 'gi'), script.replace || '');
+    } catch (err) {
+      if (onError) onError(script, err);
+      return current;
+    }
+  }, String(text ?? ''));
+}
+
+
 function normalizePersona(contact) {
   if (!contact || contact.id === 'deepseek') return contact;
   const base = builtinPersona(contact.id);
   contact.persona = { ...base, ...(contact.persona || {}) };
   contact.persona.examples = Array.isArray(contact.persona.examples) ? contact.persona.examples : [];
+  contact.persona.regexScripts = normalizeRegexScripts(contact.persona.regexScripts);
   delete contact.mode;
   return contact;
 }
@@ -1692,7 +1735,8 @@ function renderMessages() {
     const av = isMe ? '🙂' : c.emoji;
     const bg = isMe ? '#cce5ff' : c.color;
     // text with linebreaks preserved, plus cursor if streaming
-    const textHtml = escapeHtml(msg.text).replace(/\n/g, '<br>');
+    const displayText = applyRegexScripts(c, msg.text, 'display');
+    const textHtml = escapeHtml(displayText).replace(/\n/g, '<br>');
     const cursor = msg.streaming ? '<span class="typing-cursor"></span>' : '';
     // optional reasoning bubble for DeepSeek thinking mode
     const reasoningHtml = (msg.reasoning && msg.reasoning.length > 0)
@@ -1751,9 +1795,10 @@ chatInput.addEventListener('keydown', e => {
 chatSend.onclick = sendChat;
 
 function sendChat() {
-  const text = chatInput.value.trim();
-  if (!text) return;
+  const rawText = chatInput.value.trim();
+  if (!rawText) return;
   const c = state.wechat.contacts.find(x => x.id === activeChatId);
+  const text = applyRegexScripts(c, rawText, 'input', (script, err) => toast('正则脚本“' + script.name + '”错误: ' + err.message));
   const thread = state.wechat.threads[activeChatId];
   thread.push({ from: 'me', text, t: Date.now() });
   c.lastMsg = text; c.lastTime = '刚刚';
@@ -1788,6 +1833,7 @@ async function sendPersonaReply(contact, thread) {
     },
     onDone: () => {
       replyMsg.streaming = false;
+      replyMsg.text = applyRegexScripts(contact, replyMsg.text, 'output', (script, err) => toast('正则脚本“' + script.name + '”错误: ' + err.message));
       contact.lastMsg = replyMsg.text.slice(0, 30) || '(空回复)';
       contact.lastTime = '刚刚';
       saveState();
@@ -1882,7 +1928,7 @@ const CONTACT_TEMPLATES = [
 function characterCard(contact) {
   const p = contact.persona || {};
   return { spec:'tavo-character-v1', name:contact.name, emoji:contact.emoji, color:contact.color,
-    description:p.description||'', personality:p.personality||'', voice:p.voice||'', greeting:p.greeting||'', examples:p.examples||[] };
+    description:p.description||'', personality:p.personality||'', voice:p.voice||'', greeting:p.greeting||'', examples:p.examples||[], regexScripts:normalizeRegexScripts(p.regexScripts) };
 }
 
 async function openContactManager(contactId) {
@@ -1900,6 +1946,12 @@ async function openContactManager(contactId) {
     <textarea id="wc-voice" placeholder="说话风格" ${isDeepSeek?'disabled':''}>${escapeHtml(p.voice||'')}</textarea>
     <textarea id="wc-greeting" placeholder="开场白" ${isDeepSeek?'disabled':''}>${escapeHtml(p.greeting||'')}</textarea>
     <textarea id="wc-examples" placeholder='examples JSON,如 [{"user":"hi","char":"你好"}]' ${isDeepSeek?'disabled':''}>${escapeHtml(JSON.stringify(p.examples||[], null, 2))}</textarea>
+    ${isDeepSeek ? '' : `<div class="regex-section">
+      <h3>正则脚本</h3>
+      <div class="regex-help">按顺序执行。input/output 会写入聊天历史,display 只影响当前渲染显示。</div>
+      <div id="wc-regex-list"></div>
+      <button id="wc-regex-add">添加正则脚本</button>
+    </div>`}
     <textarea id="wc-import" placeholder="粘贴角色卡 JSON 后点导入"></textarea>
     <div class="actions">
       ${isDeepSeek ? '' : '<button class="primary" id="wc-save">保存</button>'}
@@ -1910,6 +1962,7 @@ async function openContactManager(contactId) {
     </div>
   </div>`;
   const close = () => document.getElementById('modal-mask').classList.remove('show');
+  let regexScripts = normalizeRegexScripts(p.regexScripts);
   const fill = card => {
     document.getElementById('wc-name').value = card.name || '';
     document.getElementById('wc-emoji').value = card.emoji || '🙂';
@@ -1919,18 +1972,77 @@ async function openContactManager(contactId) {
     document.getElementById('wc-voice').value = card.voice || '';
     document.getElementById('wc-greeting').value = card.greeting || '';
     document.getElementById('wc-examples').value = JSON.stringify(card.examples || [], null, 2);
+    regexScripts = normalizeRegexScripts(card.regexScripts);
+    renderRegexScripts();
   };
   const readCard = () => ({ name:document.getElementById('wc-name').value.trim(), emoji:document.getElementById('wc-emoji').value.trim()||'🙂', color:document.getElementById('wc-color').value,
-    description:document.getElementById('wc-desc').value.trim(), personality:document.getElementById('wc-personality').value.trim(), voice:document.getElementById('wc-voice').value.trim(), greeting:document.getElementById('wc-greeting').value.trim(), examples:JSON.parse(document.getElementById('wc-examples').value||'[]') });
+    description:document.getElementById('wc-desc').value.trim(), personality:document.getElementById('wc-personality').value.trim(), voice:document.getElementById('wc-voice').value.trim(), greeting:document.getElementById('wc-greeting').value.trim(), examples:JSON.parse(document.getElementById('wc-examples').value||'[]'), regexScripts:collectRegexScripts() });
   const saveCard = card => {
     if (!card.name) { toast('昵称不能为空'); return; }
     if (!Array.isArray(card.examples)) { toast('examples 必须是数组'); return; }
     const target = c || { id:'c_' + Date.now(), unread:0, lastMsg:card.greeting || '', lastTime:'现在' };
-    Object.assign(target, { name:card.name, emoji:card.emoji, color:card.color, persona:{ description:card.description, personality:card.personality, voice:card.voice, greeting:card.greeting, examples:card.examples } });
+    Object.assign(target, { name:card.name, emoji:card.emoji, color:card.color, persona:{ description:card.description, personality:card.personality, voice:card.voice, greeting:card.greeting, examples:card.examples, regexScripts:normalizeRegexScripts(card.regexScripts) } });
     delete target.mode;
     if (!c) { state.wechat.contacts.push(target); state.wechat.threads[target.id] = card.greeting ? [{from:'them', text:card.greeting, t:Date.now()}] : []; }
     saveState(); renderChatList(); close(); toast('已保存');
   };
+  const renderRegexScripts = () => {
+    const list = document.getElementById('wc-regex-list');
+    if (!list) return;
+    list.innerHTML = regexScripts.map((script, index) => {
+      let warn = '';
+      if (script.find) {
+        try { new RegExp(script.find, script.flags || 'gi'); } catch (err) { warn = err.message; }
+      }
+      return `<div class="regex-script ${warn ? 'invalid' : ''}" data-index="${index}">
+        <div class="regex-head">
+          <label><input class="rx-enabled" type="checkbox" ${script.enabled ? 'checked' : ''}>启用</label>
+          <input class="rx-name" placeholder="名称" value="${escapeAttr(script.name)}">
+          <select class="rx-target"><option value="input" ${script.target==='input'?'selected':''}>input</option><option value="output" ${script.target==='output'?'selected':''}>output</option><option value="display" ${script.target==='display'?'selected':''}>display</option></select>
+          <button class="icon-small rx-delete" title="删除">×</button>
+        </div>
+        <div class="regex-grid"><input class="rx-find" placeholder="find 正则" value="${escapeAttr(script.find)}"><input class="rx-flags" placeholder="flags" value="${escapeAttr(script.flags || 'gi')}"><input class="rx-replace" placeholder="replace" value="${escapeAttr(script.replace)}"></div>
+        <textarea class="rx-test-input" placeholder="测试文本"></textarea>
+        <button class="test rx-test">测试</button>
+        <div class="regex-test-result"></div>
+        <div class="regex-warn">${warn ? '⚠️ ' + escapeHtml(warn) : ''}</div>
+      </div>`;
+    }).join('') || '<div class="regex-help">暂无脚本。</div>';
+    list.querySelectorAll('.regex-script').forEach(el => {
+      const index = Number(el.dataset.index);
+      const sync = () => {
+        const s = regexScripts[index];
+        s.enabled = el.querySelector('.rx-enabled').checked;
+        s.name = el.querySelector('.rx-name').value;
+        s.target = el.querySelector('.rx-target').value;
+        s.find = el.querySelector('.rx-find').value;
+        s.flags = el.querySelector('.rx-flags').value || 'gi';
+        s.replace = el.querySelector('.rx-replace').value;
+      };
+      const validate = () => {
+        sync();
+        let warn = '';
+        if (regexScripts[index].find) {
+          try { new RegExp(regexScripts[index].find, regexScripts[index].flags || 'gi'); } catch (err) { warn = err.message; }
+        }
+        el.classList.toggle('invalid', !!warn);
+        el.querySelector('.regex-warn').textContent = warn ? '⚠️ ' + warn : '';
+      };
+      el.querySelectorAll('input, select').forEach(input => input.oninput = input.onchange = validate);
+      el.querySelector('.rx-delete').onclick = () => { regexScripts.splice(index, 1); renderRegexScripts(); };
+      el.querySelector('.rx-test').onclick = () => {
+        validate();
+        const result = el.querySelector('.regex-test-result');
+        try { result.textContent = el.querySelector('.rx-test-input').value.replace(new RegExp(regexScripts[index].find, regexScripts[index].flags || 'gi'), regexScripts[index].replace || ''); }
+        catch (err) { result.textContent = '正则错误: ' + err.message; }
+      };
+    });
+  };
+  const collectRegexScripts = () => normalizeRegexScripts(regexScripts);
+  if (!isDeepSeek) {
+    renderRegexScripts();
+    document.getElementById('wc-regex-add').onclick = () => { regexScripts.push({ id:'rx_' + Date.now(), name:'新脚本', find:'', flags:'gi', replace:'', target:'display', enabled:true }); renderRegexScripts(); };
+  }
   if (!c) document.getElementById('wc-template').onchange = e => { if (e.target.value !== '') fill(CONTACT_TEMPLATES[Number(e.target.value)]); };
   const saveBtn = document.getElementById('wc-save');
   if (saveBtn) saveBtn.onclick = () => { try { saveCard(readCard()); } catch(e) { toast('examples JSON 格式错误'); } };
@@ -2762,6 +2874,7 @@ const TOOLS = {
       const c = state.wechat.contacts.find(x => x.id === contact_id);
       if (!c) return { ok: false, error: '找不到联系人' };
       const thread = state.wechat.threads[contact_id] = state.wechat.threads[contact_id] || [];
+      text = applyRegexScripts(c, text, 'input');
       thread.push({ from: 'me', text, t: Date.now() });
       c.lastMsg = text; c.lastTime = '刚刚';
       saveState();
