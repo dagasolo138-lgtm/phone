@@ -240,6 +240,26 @@
   .chat-name { font-weight: 500; font-size: 16px; }
   .chat-time { font-size: 12px; color: #b2b2b2; }
   .chat-last { font-size: 13px; color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-detail-btn {
+    background: none; border: none; color: #8e8e93;
+    font-size: 20px; padding: 4px 0 4px 8px;
+    cursor: pointer; font-family: inherit;
+  }
+  .chat-detail-btn:active { opacity: 0.5; }
+  .wechat-manager { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .wechat-manager textarea, .wechat-manager input, .wechat-manager select {
+    width: 100%; padding: 9px 10px; font-size: 14px; font-family: inherit;
+    border: 0.5px solid #d6d6d6; border-radius: 8px; outline: none; background: #fff;
+  }
+  .wechat-manager textarea { min-height: 70px; resize: vertical; }
+  .wechat-manager .row { display: grid; grid-template-columns: 1fr 72px 88px; gap: 8px; }
+  .wechat-manager .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .wechat-manager button {
+    border: none; border-radius: 9px; padding: 9px 12px; font-size: 14px;
+    background: #e6e6eb; color: #007aff; cursor: pointer; font-family: inherit;
+  }
+  .wechat-manager button.primary { background: #07c160; color: #fff; }
+  .wechat-manager button.danger { background: #ff3b30; color: #fff; }
   .badge {
     background: #fa5151; color: #fff;
     font-size: 11px; min-width: 18px; height: 18px;
@@ -892,7 +912,7 @@
   <div class="app-header">
     <button class="nav-btn" data-action="home">‹ 主屏幕</button>
     <div class="app-title">微信</div>
-    <div class="nav-spacer"></div>
+    <button class="icon-btn" id="wechat-manage-btn" title="联系人管理">＋</button>
   </div>
   <div class="app-body" id="chat-list-body"></div>
 </div>
@@ -1120,6 +1140,44 @@ tools: [{
 
 清单里的每个 plugin URL 也必须在白名单内(gist/raw)。`;
 
+
+const BUILTIN_PERSONAS = {
+  mom: {
+    description: '52 岁中国式妈妈,退休小学老师。她很爱孩子,总是关心吃饭、睡觉、身体和工作,偶尔会顺口催婚。',
+    personality: '操心、直接、嘴硬心软,表达关心时有点唠叨,但出发点温暖。',
+    voice: '中文口语,常用“啊呀”开头,语气直接,像微信里家人聊天,不要长篇大论。',
+    greeting: '吃饭了吗?',
+    examples: [{ user: '最近有点累', char: '啊呀,累了就早点睡,别总熬夜。饭也要按时吃。' }]
+  },
+  bot: {
+    description: '通用小助手,负责回答用户问题、整理信息和给出实用建议。',
+    personality: '礼貌、可靠、耐心,不过度闲聊。',
+    voice: '用简洁自然的中文回复,条理清楚,必要时用短列表。',
+    greeting: '你好,我可以帮你处理问题。',
+    examples: [{ user: '帮我想个标题', char: '可以。把主题和风格告诉我,我给你几个备选。' }]
+  },
+  friend: {
+    description: '阿坤,28 岁兄弟,吊儿郎当,爱打球、爱开玩笑,和用户关系很熟。',
+    personality: '随性、讲义气、嘴贫,偶尔吐槽,但不会恶意攻击。',
+    voice: '中文口语,说话糙一点、短一点,像兄弟微信聊天,可以用“兄弟”“整”“别怂”等表达。',
+    greeting: '周末打球吗?',
+    examples: [{ user: '今天好烦', char: '咋了兄弟,谁又整你了?说说,晚上打球发泄下。' }]
+  }
+};
+
+function builtinPersona(id) {
+  return JSON.parse(JSON.stringify(BUILTIN_PERSONAS[id] || BUILTIN_PERSONAS.bot));
+}
+
+function normalizePersona(contact) {
+  if (!contact || contact.id === 'deepseek') return contact;
+  const base = builtinPersona(contact.id);
+  contact.persona = { ...base, ...(contact.persona || {}) };
+  contact.persona.examples = Array.isArray(contact.persona.examples) ? contact.persona.examples : [];
+  delete contact.mode;
+  return contact;
+}
+
 const defaultState = () => ({
   notes: [
     {
@@ -1133,9 +1191,9 @@ const defaultState = () => ({
   wechat: {
     contacts: [
       { id: 'deepseek', name: 'DeepSeek', emoji: '🐳', color: '#dde9ff', mode: 'deepseek', unread: 0, lastMsg: '我是真实接入的 AI,在设置里填好 API key 就能聊', lastTime: '现在' },
-      { id: 'mom',    name: '老妈',   emoji: '👩', color: '#f8b6c5', mode: 'mom',     unread: 1, lastMsg: '吃饭了吗?', lastTime: '昨天' },
-      { id: 'bot',    name: '小助手', emoji: '🤖', color: '#cfe8ff', mode: 'echo',    unread: 0, lastMsg: '你好,我会回复你的消息', lastTime: '昨天' },
-      { id: 'friend', name: '阿坤',   emoji: '😎', color: '#ffe1a8', mode: 'friend',  unread: 0, lastMsg: '周末打球吗?', lastTime: '周一' }
+      { id: 'mom',    name: '老妈',   emoji: '👩', color: '#f8b6c5', unread: 1, lastMsg: '吃饭了吗?', lastTime: '昨天', persona: builtinPersona('mom') },
+      { id: 'bot',    name: '小助手', emoji: '🤖', color: '#cfe8ff', unread: 0, lastMsg: '你好,我会回复你的消息', lastTime: '昨天', persona: builtinPersona('bot') },
+      { id: 'friend', name: '阿坤',   emoji: '😎', color: '#ffe1a8', unread: 0, lastMsg: '周末打球吗?', lastTime: '周一', persona: builtinPersona('friend') }
     ],
     threads: {
       deepseek: [{from:'them', text:'你好!我是 DeepSeek,真实接入的 AI 模型。\n\n首次使用前,请先去「设置 > DeepSeek」填入你的 API key。', t: Date.now()}],
@@ -1195,6 +1253,7 @@ function loadState() {
       merged.wechat.contacts.unshift(def.wechat.contacts.find(c => c.id === 'deepseek'));
       merged.wechat.threads.deepseek = def.wechat.threads.deepseek;
     }
+    (merged.wechat.contacts || []).forEach(normalizePersona);
     // ensure tutorial note exists (or update if outdated)
     merged.notes = merged.notes || [];
     const existingTutorial = merged.notes.find(n => n.id === 'tutorial_dev_guide');
@@ -1594,9 +1653,16 @@ function renderChatList() {
         <div class="chat-last">${escapeHtml(c.lastMsg || '')}</div>
       </div>
       ${c.unread > 0 ? `<div class="badge">${c.unread}</div>` : ''}
+      <button class="chat-detail-btn" data-detail="${c.id}" title="详情">⋯</button>
     </div>`).join('');
   body.querySelectorAll('.chat-row').forEach(el => {
-    el.onclick = () => openChat(el.dataset.id);
+    el.onclick = e => {
+      if (e.target.closest('.chat-detail-btn')) return;
+      openChat(el.dataset.id);
+    };
+  });
+  body.querySelectorAll('.chat-detail-btn').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); openContactDetail(btn.dataset.detail); };
   });
 }
 
@@ -1643,28 +1709,29 @@ function renderMessages() {
   }).join('');
 }
 
-// reply behaviors
-function autoReply(contact, userText) {
-  const t = userText.trim();
-  if (contact.mode === 'echo') {
-    return '你说:「' + t + '」';
-  }
-  if (contact.mode === 'mom') {
-    if (/吃|饭|餐/.test(t)) return '记得按时吃饭。';
-    if (/钱|工资|穷/.test(t)) return '需要钱跟妈说。';
-    if (/累|忙|烦/.test(t)) return '注意休息,别太拼。';
-    if (/[？?]$/.test(t)) return '妈不太懂这个,你看着办。';
-    if (/(好|嗯|哦)/.test(t)) return '好。';
-    return '收到。';
-  }
-  if (contact.mode === 'friend') {
-    if (/球|打|约/.test(t)) return '行!周六下午老地方?';
-    if (/[？?]$/.test(t)) return '问得好,我也不知道。';
-    if (/(哈|嘿|笑)/.test(t)) return '哈哈哈哈哈';
-    if (t.length < 5) return '嗯嗯';
-    return '666 收到';
-  }
-  return '...';
+function personaSystemPrompt(contact) {
+  const p = contact.persona || builtinPersona(contact.id);
+  return [
+    '你正在微信里扮演联系人“' + contact.name + '”。始终保持角色,直接回复用户,不要解释你是 AI。',
+    '角色背景: ' + (p.description || ''),
+    '性格特点: ' + (p.personality || ''),
+    '说话风格: ' + (p.voice || ''),
+    '开场白: ' + (p.greeting || ''),
+    '回复要自然、符合微信聊天语境。'
+  ].join('\n');
+}
+
+function personaMessages(contact, thread) {
+  const p = contact.persona || builtinPersona(contact.id);
+  const messages = [{ role: 'system', content: personaSystemPrompt(contact) }];
+  (p.examples || []).forEach(ex => {
+    if (ex.user) messages.push({ role: 'user', content: String(ex.user) });
+    if (ex.char) messages.push({ role: 'assistant', content: String(ex.char) });
+  });
+  thread.filter(m => m.from === 'me' || m.from === 'them').forEach(m => {
+    messages.push({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text });
+  });
+  return messages;
 }
 
 const chatInput = document.getElementById('chat-input');
@@ -1697,28 +1764,44 @@ function sendChat() {
   saveState();
 
   // ===== DeepSeek: real API call with streaming =====
-  if (c.mode === 'deepseek') {
-    sendDeepSeekReply(c, thread);
-    return;
-  }
+  if (c.id === 'deepseek') sendDeepSeekReply(c, thread);
+  else sendPersonaReply(c, thread);
+}
 
-  // ===== Other contacts: fake auto-reply =====
-  setTimeout(() => {
-    if (currentScreen !== 'chat-view-screen' || activeChatId !== c.id) {
-      const reply = autoReply(c, text);
-      thread.push({ from: 'them', text: reply, t: Date.now() });
-      c.lastMsg = reply; c.unread = (c.unread||0) + 1;
-      saveState();
-      return;
+async function sendPersonaReply(contact, thread) {
+  const replyMsg = { from: 'them', text: '', t: Date.now(), streaming: true, reasoning: '' };
+  thread.push(replyMsg);
+  renderMessages();
+  scrollChatToBottom();
+  const updateUI = () => {
+    if (currentScreen === 'chat-view-screen' && activeChatId === contact.id) {
+      renderMessages();
+      scrollChatToBottom();
     }
-    const reply = autoReply(c, text);
-    thread.push({ from: 'them', text: reply, t: Date.now() });
-    c.lastMsg = reply; c.lastTime = '刚刚';
-    saveState();
-    renderMessages();
-    const m2 = document.getElementById('chat-messages');
-    m2.scrollTop = m2.scrollHeight;
-  }, 800 + Math.random() * 600);
+  };
+  await callDeepSeekRaw({
+    messages: personaMessages(contact, thread.filter(m => m !== replyMsg)),
+    onDelta: ({ type, text }) => {
+      if (type === 'reasoning') replyMsg.reasoning += text;
+      else replyMsg.text += text;
+      updateUI();
+    },
+    onDone: () => {
+      replyMsg.streaming = false;
+      contact.lastMsg = replyMsg.text.slice(0, 30) || '(空回复)';
+      contact.lastTime = '刚刚';
+      saveState();
+      updateUI();
+    },
+    onError: (err) => {
+      replyMsg.streaming = false;
+      replyMsg.text = err.message === 'NO_KEY' ? '⚠️ 还没设置 API key。去「设置 > API Key」填入。' : '⚠️ 出错了: ' + err.message;
+      contact.lastMsg = replyMsg.text.slice(0, 30);
+      contact.lastTime = '刚刚';
+      saveState();
+      updateUI();
+    }
+  });
 }
 
 async function sendDeepSeekReply(contact, thread) {
@@ -1785,6 +1868,87 @@ function scrollChatToBottom() {
   const m = document.getElementById('chat-messages');
   m.scrollTop = m.scrollHeight;
 }
+
+
+document.getElementById('wechat-manage-btn').onclick = () => openContactManager();
+
+const CONTACT_TEMPLATES = [
+  { name:'林医生', emoji:'🩺', color:'#cdefff', description:'社区医生,熟悉日常健康咨询。', personality:'稳重、耐心、谨慎。', voice:'中文简洁回复,会提醒严重情况及时就医。', greeting:'哪里不舒服?', examples:[] },
+  { name:'小雅', emoji:'🎨', color:'#ffd6e7', description:'自由插画师,喜欢艺术、电影和咖啡。', personality:'温柔、有想象力、鼓励别人。', voice:'中文轻松聊天,带一点文艺感。', greeting:'今天想聊点什么?', examples:[] },
+  { name:'老周', emoji:'🧰', color:'#ffe6b3', description:'楼下修理铺老板,懂家电和生活维修。', personality:'实在、热心、话不多。', voice:'中文口语,直接给办法。', greeting:'啥东西坏了?', examples:[] },
+  { name:'Mia', emoji:'🌍', color:'#d8f5d0', description:'旅行达人,去过很多城市。', personality:'开朗、好奇、行动派。', voice:'中文回复,偶尔夹一点英文短词。', greeting:'想去哪玩?', examples:[] }
+];
+
+function characterCard(contact) {
+  const p = contact.persona || {};
+  return { spec:'tavo-character-v1', name:contact.name, emoji:contact.emoji, color:contact.color,
+    description:p.description||'', personality:p.personality||'', voice:p.voice||'', greeting:p.greeting||'', examples:p.examples||[] };
+}
+
+async function openContactManager(contactId) {
+  const c = contactId ? state.wechat.contacts.find(x => x.id === contactId) : null;
+  const isDeepSeek = c && c.id === 'deepseek';
+  const p = c && c.persona ? c.persona : {};
+  const body = document.getElementById('modal-body');
+  document.getElementById('modal-title').textContent = c ? c.name + ' · 人设' : '联系人管理';
+  document.getElementById('modal-input').style.display = 'none';
+  body.innerHTML = `<div class="wechat-manager">
+    ${c ? '' : `<select id="wc-template"><option value="">从模板创建...</option>${CONTACT_TEMPLATES.map((t,i)=>`<option value="${i}">${t.emoji} ${t.name}</option>`).join('')}</select>`}
+    <div class="row"><input id="wc-name" placeholder="昵称" value="${escapeAttr(c?.name||'')}"><input id="wc-emoji" placeholder="emoji" value="${escapeAttr(c?.emoji||'🙂')}"><input id="wc-color" type="color" value="${escapeAttr(c?.color||'#cfe8ff')}"></div>
+    <textarea id="wc-desc" placeholder="角色背景描述" ${isDeepSeek?'disabled':''}>${escapeHtml(p.description||'')}</textarea>
+    <textarea id="wc-personality" placeholder="性格特点" ${isDeepSeek?'disabled':''}>${escapeHtml(p.personality||'')}</textarea>
+    <textarea id="wc-voice" placeholder="说话风格" ${isDeepSeek?'disabled':''}>${escapeHtml(p.voice||'')}</textarea>
+    <textarea id="wc-greeting" placeholder="开场白" ${isDeepSeek?'disabled':''}>${escapeHtml(p.greeting||'')}</textarea>
+    <textarea id="wc-examples" placeholder='examples JSON,如 [{"user":"hi","char":"你好"}]' ${isDeepSeek?'disabled':''}>${escapeHtml(JSON.stringify(p.examples||[], null, 2))}</textarea>
+    <textarea id="wc-import" placeholder="粘贴角色卡 JSON 后点导入"></textarea>
+    <div class="actions">
+      ${isDeepSeek ? '' : '<button class="primary" id="wc-save">保存</button>'}
+      <button id="wc-import-btn">导入角色卡</button>
+      ${c && !isDeepSeek ? '<button id="wc-export">导出角色卡</button><button id="wc-clear">清空聊天</button>' : ''}
+      ${c && !isDeepSeek ? `<button class="danger" id="wc-delete">${['mom','bot','friend'].includes(c.id)?'恢复默认人设':'删除'}</button>` : ''}
+      <button id="wc-close">关闭</button>
+    </div>
+  </div>`;
+  const close = () => document.getElementById('modal-mask').classList.remove('show');
+  const fill = card => {
+    document.getElementById('wc-name').value = card.name || '';
+    document.getElementById('wc-emoji').value = card.emoji || '🙂';
+    document.getElementById('wc-color').value = card.color || '#cfe8ff';
+    document.getElementById('wc-desc').value = card.description || '';
+    document.getElementById('wc-personality').value = card.personality || '';
+    document.getElementById('wc-voice').value = card.voice || '';
+    document.getElementById('wc-greeting').value = card.greeting || '';
+    document.getElementById('wc-examples').value = JSON.stringify(card.examples || [], null, 2);
+  };
+  const readCard = () => ({ name:document.getElementById('wc-name').value.trim(), emoji:document.getElementById('wc-emoji').value.trim()||'🙂', color:document.getElementById('wc-color').value,
+    description:document.getElementById('wc-desc').value.trim(), personality:document.getElementById('wc-personality').value.trim(), voice:document.getElementById('wc-voice').value.trim(), greeting:document.getElementById('wc-greeting').value.trim(), examples:JSON.parse(document.getElementById('wc-examples').value||'[]') });
+  const saveCard = card => {
+    if (!card.name) { toast('昵称不能为空'); return; }
+    if (!Array.isArray(card.examples)) { toast('examples 必须是数组'); return; }
+    const target = c || { id:'c_' + Date.now(), unread:0, lastMsg:card.greeting || '', lastTime:'现在' };
+    Object.assign(target, { name:card.name, emoji:card.emoji, color:card.color, persona:{ description:card.description, personality:card.personality, voice:card.voice, greeting:card.greeting, examples:card.examples } });
+    delete target.mode;
+    if (!c) { state.wechat.contacts.push(target); state.wechat.threads[target.id] = card.greeting ? [{from:'them', text:card.greeting, t:Date.now()}] : []; }
+    saveState(); renderChatList(); close(); toast('已保存');
+  };
+  if (!c) document.getElementById('wc-template').onchange = e => { if (e.target.value !== '') fill(CONTACT_TEMPLATES[Number(e.target.value)]); };
+  const saveBtn = document.getElementById('wc-save');
+  if (saveBtn) saveBtn.onclick = () => { try { saveCard(readCard()); } catch(e) { toast('examples JSON 格式错误'); } };
+  document.getElementById('wc-import-btn').onclick = () => { try { const card = JSON.parse(document.getElementById('wc-import').value); if (card.spec !== 'tavo-character-v1') return toast('spec 不匹配'); fill(card); } catch(e) { toast('角色卡 JSON 格式错误'); } };
+  const exportBtn = document.getElementById('wc-export');
+  if (exportBtn) exportBtn.onclick = async () => { await navigator.clipboard.writeText(JSON.stringify(characterCard(c), null, 2)); toast('已复制角色卡'); };
+  const clearBtn = document.getElementById('wc-clear');
+  if (clearBtn) clearBtn.onclick = () => { state.wechat.threads[c.id] = []; c.lastMsg = ''; saveState(); renderChatList(); toast('已清空'); };
+  const delBtn = document.getElementById('wc-delete');
+  if (delBtn) delBtn.onclick = () => { if (['mom','bot','friend'].includes(c.id)) { c.persona = builtinPersona(c.id); delete c.mode; saveState(); toast('已恢复默认人设'); } else { state.wechat.contacts = state.wechat.contacts.filter(x=>x.id!==c.id); delete state.wechat.threads[c.id]; saveState(); renderChatList(); close(); toast('已删除'); } };
+  document.getElementById('wc-close').onclick = close;
+  document.getElementById('modal-actions').innerHTML = '';
+  document.getElementById('modal-mask').classList.add('show');
+}
+
+function openContactDetail(id) { openContactManager(id); }
+
+function escapeAttr(s) { return escapeHtml(String(s)).replace(/"/g, '&quot;'); }
 
 /* ===================================================================
  * Files
@@ -2601,14 +2765,11 @@ const TOOLS = {
       thread.push({ from: 'me', text, t: Date.now() });
       c.lastMsg = text; c.lastTime = '刚刚';
       saveState();
-      // simulated reply
-      const reply = autoReply(c, text);
-      thread.push({ from: 'them', text: reply, t: Date.now()+1 });
-      c.lastMsg = reply;
-      saveState();
       if (currentScreen === 'chat-view-screen' && activeChatId === contact_id) renderMessages();
       if (currentScreen === 'wechat-screen') renderChatList();
-      return { ok: true, theirReply: reply };
+      await sendPersonaReply(c, thread);
+      if (currentScreen === 'wechat-screen') renderChatList();
+      return { ok: true, theirReply: c.lastMsg };
     }
   },
   list_files: {
