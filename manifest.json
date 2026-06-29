@@ -1,0 +1,9 @@
+{
+  "name": "参考插件包",
+  "description": "把这个文件作为模板,改 URL 指向你自己的 Gist。",
+  "plugins": [
+    "https://gist.githubusercontent.com/你的用户名/REPLACE_ME_DICE/raw/dice.js",
+    "https://gist.githubusercontent.com/你的用户名/REPLACE_ME_DREAMS/raw/dreams.js",
+    "https://gist.githubusercontent.com/你的用户名/REPLACE_ME_IMAGINE_FRIEND/raw/imagine_friend.js"
+  ]
+}
