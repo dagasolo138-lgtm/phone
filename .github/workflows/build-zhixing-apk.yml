@@ -48,7 +48,8 @@ jobs:
 
           base = Path("zhixing-build/chunks")
           chunks = [base / "00.txt", base / "01.txt"]
-          chunks += [base / f"02-{i}.txt" for i in range(5)]
+          chunks += [base / f"02-{i}.txt" for i in range(4)]
+          chunks += [base / "02-4-0.txt", base / "02-4-1.txt"]
           chunks += [base / f"{i:02d}.txt" for i in range(3, 9)]
           missing = [str(path) for path in chunks if not path.is_file()]
           if missing:
