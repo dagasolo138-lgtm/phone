@@ -42,9 +42,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat zhixing-build/chunks/*.txt > zhixing-apk-source.zip.b64
-          base64 --decode zhixing-apk-source.zip.b64 > zhixing-apk-source.zip
-          unzip -q zhixing-apk-source.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, zipfile
+
+          chunks = sorted(Path("zhixing-build/chunks").glob("[0-9][0-9].txt"))
+          if len(chunks) != 9:
+              raise SystemExit(f"Expected 9 source chunks, found {len(chunks)}")
+          payload = "".join(path.read_text(encoding="utf-8-sig").strip() for path in chunks)
+          archive = base64.b64decode(payload, validate=True)
+          Path("zhixing-apk-source.zip").write_bytes(archive)
+          with zipfile.ZipFile("zhixing-apk-source.zip") as zf:
+              bad = zf.testzip()
+              if bad:
+                  raise SystemExit(f"Corrupt archive member: {bad}")
+              zf.extractall(".")
+          print(f"Decoded {len(archive)} bytes from {len(chunks)} chunks")
+          PY
           test -f zhixing-apk-source/package.json
           test -f zhixing-apk-source/www/index.html
 
