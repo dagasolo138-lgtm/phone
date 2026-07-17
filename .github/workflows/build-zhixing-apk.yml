@@ -83,6 +83,24 @@ jobs:
           npx cap add android
           npx cap sync android
 
+      - name: Create persistent update signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          rm -f "$HOME/.android/debug.keystore"
+          keytool -genkeypair \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Zhixing Local App, OU=Personal, O=Huang, L=Local, ST=Local, C=CN" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -noprompt
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+
       - name: Build debug APK
         working-directory: zhixing-apk-source/android
         run: |
