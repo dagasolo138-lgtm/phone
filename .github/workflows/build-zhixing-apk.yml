@@ -1,0 +1,78 @@
+name: Build Zhixing APK
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "zhixing-build/**"
+      - ".github/workflows/build-zhixing-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Reassemble source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat zhixing-build/chunks/*.txt > zhixing-apk-source.zip.b64
+          base64 --decode zhixing-apk-source.zip.b64 > zhixing-apk-source.zip
+          unzip -q zhixing-apk-source.zip
+          test -f zhixing-apk-source/package.json
+          test -f zhixing-apk-source/www/index.html
+
+      - name: Install Capacitor dependencies
+        working-directory: zhixing-apk-source
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Android project
+        working-directory: zhixing-apk-source
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: zhixing-apk-source/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="zhixing-apk-source/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          mkdir -p apk-output
+          cp "$APK" apk-output/zhixing-v1-debug.apk
+          sha256sum apk-output/zhixing-v1-debug.apk > apk-output/SHA256SUMS.txt
+          ls -lh apk-output/
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhixing-android-apk
+          path: apk-output/
+          if-no-files-found: error
+          retention-days: 30
