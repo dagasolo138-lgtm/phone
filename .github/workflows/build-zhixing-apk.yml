@@ -2,7 +2,7 @@ name: Build Zhixing APK
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths:
       - "zhixing-build/**"
@@ -34,7 +34,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Reassemble source archive
         shell: bash
@@ -62,18 +64,28 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Collect APK
+      - name: Collect APK and update key
         shell: bash
         run: |
           set -euo pipefail
           APK="zhixing-apk-source/android/app/build/outputs/apk/debug/app-debug.apk"
+          KEYSTORE="$HOME/.android/debug.keystore"
           test -f "$APK"
+          test -f "$KEYSTORE"
           mkdir -p apk-output
           cp "$APK" apk-output/zhixing-v1-debug.apk
-          sha256sum apk-output/zhixing-v1-debug.apk > apk-output/SHA256SUMS.txt
+          cp "$KEYSTORE" apk-output/zhixing-update-key.jks
+          cat > apk-output/UPDATE-KEY.txt <<'TXT'
+          Keep zhixing-update-key.jks for future APK updates.
+          Alias: androiddebugkey
+          Keystore password: android
+          Key password: android
+          Package ID: com.huang.zhixing
+          TXT
+          sha256sum apk-output/zhixing-v1-debug.apk apk-output/zhixing-update-key.jks > apk-output/SHA256SUMS.txt
           ls -lh apk-output/
 
-      - name: Upload installable APK
+      - name: Upload installable APK and update key
         uses: actions/upload-artifact@v4
         with:
           name: zhixing-android-apk
