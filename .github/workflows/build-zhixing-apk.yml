@@ -87,10 +87,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android"
-          rm -f "$HOME/.android/debug.keystore"
+          KEYSTORE="$RUNNER_TEMP/zhixing-update-key.jks"
+          rm -f "$KEYSTORE"
           keytool -genkeypair \
-            -keystore "$HOME/.android/debug.keystore" \
+            -keystore "$KEYSTORE" \
             -storepass android \
             -alias androiddebugkey \
             -keypass android \
@@ -99,39 +99,55 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -noprompt
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey
+          keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey
 
-      - name: Build debug APK
+      - name: Build unsigned release APK
         working-directory: zhixing-apk-source/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
 
-      - name: Collect APK and update key
+      - name: Sign, verify and collect APK
         shell: bash
         run: |
           set -euo pipefail
-          APK="zhixing-apk-source/android/app/build/outputs/apk/debug/app-debug.apk"
-          KEYSTORE="$HOME/.android/debug.keystore"
-          test -f "$APK"
+          UNSIGNED="zhixing-apk-source/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          KEYSTORE="$RUNNER_TEMP/zhixing-update-key.jks"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          test -f "$UNSIGNED"
           test -f "$KEYSTORE"
+          test -x "$ZIPALIGN"
+          test -x "$APKSIGNER"
+
           mkdir -p apk-output
-          cp "$APK" apk-output/zhixing-v1-debug.apk
+          "$ZIPALIGN" -f -p 4 "$UNSIGNED" apk-output/zhixing-v1-aligned.apk
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out apk-output/zhixing-v1.apk \
+            apk-output/zhixing-v1-aligned.apk
+          rm apk-output/zhixing-v1-aligned.apk
+          "$APKSIGNER" verify --verbose --print-certs apk-output/zhixing-v1.apk
+
           cp "$KEYSTORE" apk-output/zhixing-update-key.jks
           cat > apk-output/UPDATE-KEY.txt <<'TXT'
-          Keep zhixing-update-key.jks for future APK updates.
+          Keep zhixing-update-key.jks for every future APK update.
           Alias: androiddebugkey
           Keystore password: android
           Key password: android
           Package ID: com.huang.zhixing
           TXT
-          sha256sum apk-output/zhixing-v1-debug.apk apk-output/zhixing-update-key.jks > apk-output/SHA256SUMS.txt
+          sha256sum apk-output/zhixing-v1.apk apk-output/zhixing-update-key.jks > apk-output/SHA256SUMS.txt
           ls -lh apk-output/
 
       - name: Upload installable APK and update key
         uses: actions/upload-artifact@v4
         with:
-          name: zhixing-android-apk
+          name: zhixing-android-apk-final
           path: apk-output/
           if-no-files-found: error
           retention-days: 30
